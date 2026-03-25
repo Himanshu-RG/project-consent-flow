@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: consentmap_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: consentmap_user
+      POSTGRES_PASSWORD: consentmap_pass
+      POSTGRES_DB: consentmap_db
+      TZ: Asia/Kolkata
+      PGTZ: Asia/Kolkata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ./consent_pdfs_uploaded:/usr/src/app/consent_pdfs_uploaded
+
+volumes:
+  postgres_data:

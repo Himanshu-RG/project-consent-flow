@@ -1,32 +1,55 @@
 import { useState } from "react";
-import { useAuth, UserRole } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Camera } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 
 const Login = () => {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<UserRole>("admin");
-  const { login } = useAuth();
-  const navigate = useNavigate();
-  const { toast } = useToast();
+  // Login state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [isLoginLoading, setIsLoginLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Register state
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerFullName, setRegisterFullName] = useState("");
+  const [registerRole, setRegisterRole] = useState<"admin" | "user">("user");
+  const [isRegisterLoading, setIsRegisterLoading] = useState(false);
+
+  const { login, register } = useAuth();
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const success = login(username, password, role);
-    if (success) {
-      navigate("/dashboard");
-    } else {
-      toast({
-        title: "Login Failed",
-        description: "Invalid credentials. Try admin/admin or user/user.",
-        variant: "destructive",
+    setIsLoginLoading(true);
+    
+    try {
+      await login({ email: loginEmail, password: loginPassword });
+    } catch (error) {
+      console.error('Login error:', error);
+    } finally {
+      setIsLoginLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsRegisterLoading(true);
+    
+    try {
+      await register({
+        email: registerEmail,
+        password: registerPassword,
+        full_name: registerFullName,
+        role: registerRole
       });
+    } catch (error) {
+      console.error('Registration error:', error);
+    } finally {
+      setIsRegisterLoading(false);
     }
   };
 
@@ -43,54 +66,120 @@ const Login = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                placeholder="Enter username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Login as</Label>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant={role === "admin" ? "default" : "outline"}
-                  className="flex-1"
-                  onClick={() => setRole("admin")}
-                >
-                  Admin
+          <Tabs defaultValue="login" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="login">Login</TabsTrigger>
+              <TabsTrigger value="register">Register</TabsTrigger>
+            </TabsList>
+
+            {/* Login Tab */}
+            <TabsContent value="login">
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="login-email">Email</Label>
+                  <Input
+                    id="login-email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    required
+                    disabled={isLoginLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="login-password">Password</Label>
+                  <Input
+                    id="login-password"
+                    type="password"
+                    placeholder="Enter password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    required
+                    disabled={isLoginLoading}
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={isLoginLoading}>
+                  {isLoginLoading ? "Signing in..." : "Sign In"}
                 </Button>
-                <Button
-                  type="button"
-                  variant={role === "user" ? "default" : "outline"}
-                  className="flex-1"
-                  onClick={() => setRole("user")}
-                >
-                  User
+              </form>
+            </TabsContent>
+
+            {/* Register Tab */}
+            <TabsContent value="register">
+              <form onSubmit={handleRegister} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="register-name">Full Name</Label>
+                  <Input
+                    id="register-name"
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={registerFullName}
+                    onChange={(e) => setRegisterFullName(e.target.value)}
+                    required
+                    disabled={isRegisterLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="register-email">Email</Label>
+                  <Input
+                    id="register-email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={registerEmail}
+                    onChange={(e) => setRegisterEmail(e.target.value)}
+                    required
+                    disabled={isRegisterLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="register-password">Password</Label>
+                  <Input
+                    id="register-password"
+                    type="password"
+                    placeholder="Create a password"
+                    value={registerPassword}
+                    onChange={(e) => setRegisterPassword(e.target.value)}
+                    required
+                    disabled={isRegisterLoading}
+                    minLength={6}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Password must be at least 6 characters
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Account Type</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={registerRole === "user" ? "default" : "outline"}
+                      className="flex-1"
+                      onClick={() => setRegisterRole("user")}
+                      disabled={isRegisterLoading}
+                    >
+                      User
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={registerRole === "admin" ? "default" : "outline"}
+                      className="flex-1"
+                      onClick={() => setRegisterRole("admin")}
+                      disabled={isRegisterLoading}
+                    >
+                      Admin
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Admin: Full access | User: View only
+                  </p>
+                </div>
+                <Button type="submit" className="w-full" disabled={isRegisterLoading}>
+                  {isRegisterLoading ? "Creating account..." : "Create Account"}
                 </Button>
-              </div>
-            </div>
-            <Button type="submit" className="w-full">
-              Sign In
-            </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              Sample: admin/admin or user/user
-            </p>
-          </form>
+              </form>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>
