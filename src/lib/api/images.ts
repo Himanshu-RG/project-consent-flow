@@ -72,3 +72,80 @@ export const getImage = async (imageId: string): Promise<ImageResponse> => {
 export const deleteImage = async (imageId: string): Promise<void> => {
     return apiDelete<void>(`images/${imageId}`);
 };
+
+// ─── Manual Redaction Box API ────────────────────────────────────────────────
+
+export interface ManualBoxPayload {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  consented: boolean;
+  label: string;
+  pdfName?: string;
+}
+
+/**
+ * Save (overwrite) the list of manual redaction boxes for an image.
+ * Green boxes that carry a new PDF file are uploaded via multipart/form-data.
+ */
+export const saveManualRedactBoxes = async (
+    projectId: string,
+    imageId: string,
+    boxes: Array<{
+        id: string;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        consented: boolean;
+        label: string;
+        pdf?: File | null;
+        pdfName?: string;
+    }>
+): Promise<{ saved: number }> => {
+    const formData = new FormData();
+
+    // Serialize box metadata (without File objects) as JSON
+    const boxMeta = boxes.map(({ pdf: _pdf, ...rest }) => rest);
+    formData.append("boxes", JSON.stringify(boxMeta));
+
+    // Attach any PDF files keyed by box index
+    boxes.forEach((b, i) => {
+        if (b.pdf instanceof File) {
+            formData.append(`pdf_${i}`, b.pdf, b.pdf.name);
+        }
+    });
+
+    const userId = localStorage.getItem("consentmap_user_id");
+    const headers: HeadersInit = userId ? { "X-User-ID": userId } : {};
+
+    const response = await fetch(
+        `http://localhost:8000/api/projects/${projectId}/images/${imageId}/manual-redact-upload`,
+        { method: "POST", headers, body: formData }
+    );
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || "Failed to save manual redaction boxes");
+    }
+    return response.json();
+};
+
+/**
+ * Fetch the stored manual redaction boxes for an image.
+ */
+export const getManualRedactBoxes = async (
+    projectId: string,
+    imageId: string
+): Promise<ManualBoxPayload[]> => {
+    const userId = localStorage.getItem("consentmap_user_id");
+    const headers: HeadersInit = userId ? { "X-User-ID": userId } : {};
+
+    const response = await fetch(
+        `http://localhost:8000/api/projects/${projectId}/images/${imageId}/manual-redact`,
+        { method: "GET", headers }
+    );
+    if (!response.ok) return [];
+    return response.json();
+};

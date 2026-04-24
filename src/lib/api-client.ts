@@ -103,12 +103,29 @@ export const apiGet = async <T>(
 export const apiPost = async <T>(
     endpoint: string,
     data?: any,
-    includeAuth: boolean = false
+    options?: { headers?: HeadersInit }
 ): Promise<T> => {
+    const isFormData = data instanceof FormData;
+
+    // Build headers
+    let headers: HeadersInit;
+    if (isFormData) {
+        // For FormData, don't set Content-Type (browser will set it with boundary)
+        const userId = localStorage.getItem('consentmap_user_id');
+        headers = userId ? { 'X-User-ID': userId } : {};
+    } else {
+        headers = buildHeaders('application/json');
+    }
+
+    // Merge with custom headers if provided
+    if (options?.headers) {
+        headers = { ...headers, ...options.headers };
+    }
+
     const response = await fetch(buildUrl(endpoint), {
         method: 'POST',
-        headers: buildHeaders('application/json'),
-        body: JSON.stringify(data),
+        headers,
+        body: isFormData ? data : JSON.stringify(data),
     });
 
     return handleResponse<T>(response);

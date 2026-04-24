@@ -1,6 +1,8 @@
 """
 Pydantic schemas for request/response validation.
 These schemas define the structure of data sent to and from the API.
+
+Architecture v2: Fixed admin/user accounts, dataset-based face recognition.
 """
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
@@ -35,9 +37,6 @@ class UserResponse(UserBase):
     """Schema for user response (excludes password)."""
     id: UUID
     is_active: bool
-    pid: Optional[str] = None
-    identity_image_url: Optional[str] = None
-    consent_pdf_url: Optional[str] = None
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
@@ -105,43 +104,95 @@ class ProjectListResponse(BaseModel):
 
 
 # ============================================
-# Person Schemas
+# Person Schemas (ML-detected individuals)
 # ============================================
 
+class FaceBBox(BaseModel):
+    """Bounding box of a detected face."""
+    x: int
+    y: int
+    width: int
+    height: int
+
+
 class PersonBase(BaseModel):
-    """Base person schema with common fields."""
+    """Base person schema — represents an ML-detected individual."""
     name: str = Field(..., min_length=1, max_length=255)
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    pid: Optional[str] = None          # Person ID from dataset (e.g. 'Arun.A')
     consent_status: str = "pending"
     notes: Optional[str] = None
 
 
 class PersonCreate(PersonBase):
-    """Schema for creating a new person."""
-    consent_date: Optional[datetime] = None
+    """Schema for creating a person record (usually done by ML pipeline)."""
+    confidence: Optional[float] = None
+    bbox: Optional[FaceBBox] = None
 
 
 class PersonUpdate(BaseModel):
     """Schema for updating a person (all fields optional)."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
+    pid: Optional[str] = None
     consent_status: Optional[str] = None
-    consent_date: Optional[datetime] = None
     notes: Optional[str] = None
+
+
+class PersonPromote(BaseModel):
+    """Schema for promoting an unknown person to the global dataset."""
+    name: str = Field(..., min_length=1, max_length=255)
+    pid: str = Field(..., min_length=1, max_length=255)
+
+
+class PersonDetectionResponse(BaseModel):
+    """Schema for a single detection instance of a person."""
+    image_id: str
+    image_url: str
+    bbox: Dict[str, Any]
+    confidence: Optional[float] = None
 
 
 class PersonResponse(PersonBase):
     """Schema for person response."""
     id: UUID
     project_id: UUID
-    user_id: Optional[UUID] = None
-    consent_date: Optional[datetime]
+    confidence: Optional[float] = None
+    bbox: Optional[Dict[str, Any]] = None   # {x, y, width, height}
+    image_url: Optional[str] = None         # URL of first image where this person was detected
+    image_id: Optional[str] = None          # ID of that first image
+    detections: Optional[List[PersonDetectionResponse]] = [] # All detections of this person
     created_at: datetime
     updated_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================
+# ML Result Schemas
+# ============================================
+
+class FaceDetectionResult(BaseModel):
+    """Single detected face result from ML processing."""
+    bbox: FaceBBox
+    person_name: Optional[str] = None   # Matched person name (None if unknown)
+    person_id: Optional[str] = None     # Matched person pid (None if unknown)
+    confidence: float                    # Match confidence score (0.0 - 1.0)
+
+
+class ImageProcessingResult(BaseModel):
+    """Processing result for a single image."""
+    image_name: str
+    image_width: int
+    image_height: int
+    faces: List[FaceDetectionResult]
+
+
+class ProjectProcessResult(BaseModel):
+    """Full processing result for a project (all images)."""
+    project_id: str
+    total_images_processed: int
+    total_faces_detected: int
+    total_matched: int
+    results: List[ImageProcessingResult]
 
 
 # ============================================
@@ -170,7 +221,7 @@ class ImageResponse(ImageBase):
     mime_type: Optional[str]
     width: Optional[int]
     height: Optional[int]
-    image_metadata: Optional[Dict[str, Any]]  # Changed from metadata to image_metadata
+    image_metadata: Optional[Dict[str, Any]]
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
@@ -189,12 +240,13 @@ class ConsentFormBase(BaseModel):
 
 class ConsentFormCreate(ConsentFormBase):
     """Schema for creating a new consent form."""
-    person_id: UUID
+    person_id: Optional[UUID] = None
 
 
 class ConsentFormUpdate(BaseModel):
     """Schema for updating a consent form."""
     is_matched: Optional[bool] = None
+    person_id: Optional[UUID] = None
     signed_date: Optional[datetime] = None
     expiry_date: Optional[datetime] = None
 
@@ -224,7 +276,7 @@ class EventResponse(BaseModel):
     user_id: Optional[UUID]
     event_type: str
     description: Optional[str]
-    event_metadata: Optional[Dict[str, Any]]  # Changed from metadata to event_metadata
+    event_metadata: Optional[Dict[str, Any]]
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
@@ -260,22 +312,3 @@ class ErrorResponse(BaseModel):
     error: str
     message: str
     details: Optional[Dict[str, Any]] = None
-
-
-# ============================================
-# Enrollment Status Schemas
-# ============================================
-
-class EnrollmentStatusResponse(BaseModel):
-    """Schema for enrollment and consent status of a user in a project."""
-    user_id: UUID
-    user_name: str
-    user_email: str
-    pid: Optional[str] = None
-    is_detected: bool  # Whether face was detected in project images
-    consent_status: str  # "matching", "not_matching", "pending"
-    match_confidence: Optional[int] = None  # 0-100 if detected
-    person_id: Optional[UUID] = None  # Person record ID if detected
-    has_identity_image: bool
-    has_consent_pdf: bool
-

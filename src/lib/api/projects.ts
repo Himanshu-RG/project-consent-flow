@@ -8,8 +8,17 @@ import type { ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse
 
 /**
  * Create a new project
+ * Accepts either ProjectCreate object or FormData (for file uploads)
  */
-export const createProject = async (projectData: ProjectCreate): Promise<ProjectResponse> => {
+export const createProject = async (projectData: ProjectCreate | FormData): Promise<ProjectResponse> => {
+    if (projectData instanceof FormData) {
+        // Handle FormData upload with files
+        return apiPost<ProjectResponse>('projects', projectData, {
+            headers: {
+                // Let browser set Content-Type with boundary for multipart/form-data
+            },
+        });
+    }
     return apiPost<ProjectResponse>('projects', projectData);
 };
 
@@ -65,8 +74,83 @@ export const deleteProject = async (projectId: string): Promise<void> => {
 };
 
 /**
- * Trigger ML processing for a project
+ * Trigger ML processing for a project.
+ * Returns immediately with { task_id, status, message } — processing runs in the background.
  */
-export const processProject = async (projectId: string): Promise<any> => {
+export const processProject = async (projectId: string): Promise<{ task_id: string; project_id: string; status: string; message: string }> => {
     return apiPost<any>(`projects/${projectId}/process`, {});
+};
+
+/**
+ * Subscribe to real-time SSE progress for an ML processing task.
+ * onEvent is called with each progress snapshot.
+ * Returns the EventSource so the caller can close() it when done.
+ */
+export const subscribeToProcessProgress = (
+    projectId: string,
+    taskId: string,
+    onEvent: (data: {
+        status: string;
+        progress: number;
+        total: number;
+        current_image: string | null;
+        result: any;
+        error: string | null;
+    }) => void,
+    onDone: () => void,
+    onError: (err: string) => void,
+): EventSource => {
+    const url = `http://localhost:8000/api/projects/${projectId}/process/status/${taskId}`;
+    const es = new EventSource(url);
+
+    es.onmessage = (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            onEvent(data);
+            if (data.status === 'done') {
+                es.close();
+                onDone();
+            } else if (data.status === 'error') {
+                es.close();
+                onError(data.error || 'Processing failed');
+            }
+        } catch { /* ignore parse errors */ }
+    };
+
+    es.onerror = () => {
+        es.close();
+        onError('Connection to progress stream lost');
+    };
+
+    return es;
+};
+
+/**
+ * Upload a consent PDF directly for a specific detected person.
+ * Sets consent_status = 'granted' on success.
+ */
+export const uploadPersonConsent = async (
+    projectId: string,
+    personId: string,
+    file: File
+): Promise<any> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('form_name', file.name);
+    return apiPost<any>(`projects/${projectId}/persons/${personId}/consent`, formData);
+};
+
+/**
+ * Trigger consent PDF → person name matching for a project.
+ * Re-runs matching logic comparing PDF filenames to person pids.
+ */
+export const triggerConsentMatch = async (projectId: string): Promise<{ matched: number; message: string }> => {
+    return apiPost<any>(`projects/${projectId}/consent/match`, {});
+};
+
+/**
+ * Get persons in a project
+ */
+export const getPersons = async (projectId: string): Promise<any[]> => {
+    return apiGet<any[]>(`projects/${projectId}/persons`);
 };

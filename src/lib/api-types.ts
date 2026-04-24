@@ -25,10 +25,6 @@ export interface UserLogin {
 export interface UserResponse extends UserBase {
     id: string;
     is_active: boolean;
-    pid?: string;
-    identity_image_url?: string;
-    face_embedding?: any; // or specific type if known
-    consent_pdf_url?: string;
     created_at: string;
 }
 
@@ -94,35 +90,51 @@ export interface ProjectListResponse {
 
 export interface PersonBase {
     name: string;
-    email?: string;
-    phone?: string;
-    consent_status?: 'pending' | 'granted' | 'denied' | 'expired' | 'missing';
+    consent_status?: 'pending' | 'granted' | 'denied' | 'expired';
     notes?: string;
 }
 
 export interface PersonCreate extends PersonBase {
-    consent_date?: string;
+    pid?: string;
+    confidence?: number;
+    bbox?: { x: number; y: number; width: number; height: number };
 }
 
 export interface PersonUpdate {
     name?: string;
-    email?: string;
-    phone?: string;
+    pid?: string;
     consent_status?: 'pending' | 'granted' | 'denied' | 'expired';
-    consent_date?: string;
     notes?: string;
+}
+
+export interface PersonDetection {
+    image_id: string;
+    image_url: string;
+    bbox: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    } | null;
+    confidence?: number;
 }
 
 export interface PersonResponse extends PersonBase {
     id: string;
     project_id: string;
-    user_id?: string;
-    face_embedding?: any;
-    match_confidence?: number;  // Similarity score 0-100
-    consent_date?: string;
+    pid?: string;             // Person ID from dataset (e.g. 'Arun.A'), null for unknowns
+    confidence?: number;      // ML match confidence 0.0 - 1.0
+    bbox?: {                  // Bounding box from last detection
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    } | null;
+    image_url?: string;       // URL of first image where this person was detected
+    image_id?: string;        // ID of that image
+    detections?: PersonDetection[]; // All detections corresponding to this person
     created_at: string;
     updated_at: string;
-    user?: UserResponse;  // Populated if matched to a user
 }
 
 // ============================================
@@ -220,4 +232,10 @@ export class ApiError extends Error {
         super(data?.message || statusText);
         this.name = 'ApiError';
     }
+}
+
+export interface KnownPersonResponse {
+    pid: string;
+    name: string;
+    image_url?: string;
 }

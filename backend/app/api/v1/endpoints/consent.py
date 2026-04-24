@@ -20,6 +20,47 @@ from app.core.config import settings
 router = APIRouter(tags=["Consent Forms"])
 
 
+def match_consents_to_persons(project_id, db) -> int:
+    """Match all uploaded consent PDFs in a project to detected persons by pid.
+
+    Logic:
+      - For each ConsentForm in the project, extract the filename stem from form_name
+        (e.g. 'Arun.A.pdf' → 'Arun.A')
+      - Find a Person in the project whose pid equals that stem (case-insensitive)
+      - If found: link person_id, set is_matched=True, set person.consent_status='granted'
+
+    Returns number of newly matched consents.
+    """
+    consents = db.query(ConsentForm).filter(
+        ConsentForm.project_id == project_id
+    ).all()
+
+    matched = 0
+    for consent in consents:
+        # Extract stem: "Arun.A.pdf" → "Arun.A", already stemmed names stay as-is
+        stem = Path(consent.form_name).stem.strip()
+        if not stem:
+            continue
+
+        # Find matching person by pid (exact match)
+        person = db.query(Person).filter(
+            Person.project_id == project_id,
+            Person.pid == stem
+        ).first()
+
+        if person:
+            if not consent.is_matched:
+                consent.person_id = person.id
+                consent.is_matched = True
+                matched += 1
+            # Always keep person status up to date
+            if person.consent_status != "granted":
+                person.consent_status = "granted"
+
+    db.commit()
+    return matched
+
+
 @router.post("/projects/{project_id}/consent", response_model=List[ConsentFormResponse], status_code=status.HTTP_201_CREATED)
 async def upload_consent_forms(
     project_id: UUID,
@@ -33,13 +74,13 @@ async def upload_consent_forms(
     """
     Upload one or more consent form PDFs for a project.
     
-    - **files**: PDF files to upload
-    - **person_id**: ID of the person this consent is for (optional)
-    - **form_name**: Name/title of the consent form
-    - **signed_date**: Date the consent was signed (ISO format)
-    - **expiry_date**: Date the consent expires (ISO format)
+    PDF filenames are used to auto-match persons:
+      - 'Arun.A.pdf' will automatically match the person with pid='Arun.A'
+      - Matched persons get consent_status='granted'
     
-    Returns list of created consent form records.
+    - **files**: PDF files to upload (filename = person's pid + .pdf)
+    - **person_id**: Explicitly link to a specific person (optional, overrides name matching)
+    - **form_name**: Fallback form name if no filename-based match is possible
     """
     # Verify project exists
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -87,7 +128,7 @@ async def upload_consent_forms(
                 detail=f"File type {file_extension} not allowed. Only PDF files are allowed"
             )
         
-        # Generate unique filename
+        # Generate unique filename (keep original as form_name for matching later)
         unique_filename = f"{uuid4()}{file_extension}"
         file_path = upload_dir / unique_filename
         
@@ -100,17 +141,20 @@ async def upload_consent_forms(
         
         # Validate file size
         if file_size > settings.MAX_FILE_SIZE:
-            os.remove(file_path)  # Delete the file
+            os.remove(file_path)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File {file.filename} exceeds maximum size of {settings.MAX_FILE_SIZE / (1024*1024)}MB"
             )
         
+        # Use the original filename as form_name so matching works
+        original_filename = file.filename or form_name
+        
         # Create consent form record
         new_consent = ConsentForm(
             project_id=project_id,
-            person_id=person_id,
-            form_name=form_name,
+            person_id=person_id,   # May be None; will be filled by name-matching
+            form_name=original_filename,
             file_path=str(file_path),
             file_url=f"/uploads/consent_pdfs/{project_id}/{unique_filename}",
             file_size=file_size,
@@ -128,17 +172,42 @@ async def upload_consent_forms(
     for consent in uploaded_consents:
         db.refresh(consent)
     
+    # Auto-match PDFs to persons by filename stem
+    newly_matched = match_consents_to_persons(project_id, db)
+    print(f"[CONSENT] Auto-matched {newly_matched} consent(s) to persons by name")
+    
     # Log event
     event = Event(
         project_id=project_id,
         event_type="consent_uploaded",
-        description=f"{len(uploaded_consents)} consent form(s) uploaded",
-        event_metadata={"count": len(uploaded_consents), "form_name": form_name}
+        description=f"{len(uploaded_consents)} consent form(s) uploaded, {newly_matched} auto-matched by name",
+        event_metadata={"count": len(uploaded_consents), "matched": newly_matched}
     )
     db.add(event)
     db.commit()
     
     return uploaded_consents
+
+
+@router.post("/projects/{project_id}/consent/match")
+async def trigger_consent_matching(
+    project_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger consent PDF → person matching for a project.
+    
+    Useful after running the ML process if PDFs were uploaded before persons were detected.
+    Matches PDFs to persons by comparing filename stem to person pid.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    matched = match_consents_to_persons(project_id, db)
+    return {"matched": matched, "message": f"{matched} consent form(s) matched to persons"}
+
+
 
 
 @router.get("/projects/{project_id}/consent", response_model=List[ConsentFormResponse])
@@ -223,6 +292,7 @@ async def delete_consent_form(
         )
     
     project_id = consent.project_id
+    person_id = consent.person_id
     
     # Delete physical file
     if consent.file_path and os.path.exists(consent.file_path):
@@ -234,6 +304,16 @@ async def delete_consent_form(
     # Delete database record
     db.delete(consent)
     db.commit()
+    
+    # Re-evaluate person's consent status
+    if person_id:
+        person = db.query(Person).filter(Person.id == person_id).first()
+        if person:
+            # Check if this person has any remaining consent forms
+            remaining_consents = db.query(ConsentForm).filter(ConsentForm.person_id == person_id).count()
+            if remaining_consents == 0:
+                person.consent_status = "pending"
+                db.commit()
     
     # Log event
     event = Event(

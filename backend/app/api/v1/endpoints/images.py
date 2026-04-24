@@ -77,11 +77,17 @@ async def upload_images(
         with file_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # Get image dimensions
+        # Get image dimensions and normalize EXIF orientation
         try:
             with PILImage.open(file_path) as img:
+                from PIL import ImageOps
+                # Strip EXIF orientation and ensure it is physically upright
+                img = ImageOps.exif_transpose(img)
+                # Overwrite the original file with the EXIF-stripped upright version
+                img.save(file_path, quality=100)
                 width, height = img.size
-        except Exception:
+        except Exception as e:
+            print(f"Error checking/rotating EXIF: {e}")
             width, height = None, None
         
         # Get file size

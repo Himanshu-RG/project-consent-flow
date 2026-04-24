@@ -8,7 +8,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { sampleProjects } from "@/data/sampleData";
 import { Upload, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { createProject, updateProject } from "@/lib/api/projects";
@@ -20,7 +19,7 @@ const CreateProject = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
-  const existing = id ? sampleProjects.find((p) => p.id === id) : null;
+  const existing = null; // edit mode pre-fill removed (sampleData deleted)
 
   // Basic fields
   const [name, setName] = useState(existing?.name ?? "");
@@ -40,6 +39,36 @@ const CreateProject = () => {
   const [piiOther, setPiiOther] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // File upload states
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [selectedPDFs, setSelectedPDFs] = useState<File[]>([]);
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files).filter(file => 
+        file.type.startsWith('image/')
+      );
+      setSelectedImages(prev => [...prev, ...newFiles]);
+    }
+  };
+
+  const handlePDFSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files).filter(file => 
+        file.type === 'application/pdf'
+      );
+      setSelectedPDFs(prev => [...prev, ...newFiles]);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const removePDF = (index: number) => {
+    setSelectedPDFs(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -51,14 +80,14 @@ const CreateProject = () => {
         description,
         notes,
         target_image_count: targetImageCount,
-        status,
+        status: status as "active" | "completed" | "on-hold" | "archived",
         camera_dslr: cameraDslr,
         camera_mobile: cameraMobile,
         pii_face: piiFace,
         pii_objects: piiObjects,
         pii_document: piiDocument,
         pii_other: piiOther,
-        owner_id: user?.id, // Add logged-in user's ID
+        owner_id: user?.id,
       };
 
       if (existing && id) {
@@ -68,10 +97,30 @@ const CreateProject = () => {
           description: `"${name}" has been updated successfully.`,
         });
       } else {
-        await createProject(projectData);
+        // Create project with files
+        const formData = new FormData();
+        
+        // Add project data
+        Object.entries(projectData).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            formData.append(key, value.toString());
+          }
+        });
+
+        // Add images
+        selectedImages.forEach(file => {
+          formData.append('images', file);
+        });
+
+        // Add PDFs
+        selectedPDFs.forEach(file => {
+          formData.append('consent_pdfs', file);
+        });
+
+        await createProject(formData);
         toast({
           title: "Project Created",
-          description: `"${name}" has been created successfully.`,
+          description: `"${name}" has been created successfully with ${selectedImages.length} image(s) and ${selectedPDFs.length} PDF(s).`,
         });
       }
       
@@ -85,13 +134,6 @@ const CreateProject = () => {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleUpload = (type: string) => {
-    toast({
-      title: `${type} Upload`,
-      description: `${type} upload will be connected to storage later.`,
-    });
   };
 
   return (
@@ -248,21 +290,96 @@ const CreateProject = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Uploads</CardTitle>
+              <CardTitle className="text-lg">Upload Files (Optional)</CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-col gap-3 sm:flex-row">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => handleUpload("Images")}>
-                <Upload className="mr-2 h-4 w-4" /> Upload Images
-              </Button>
-              <Button type="button" variant="outline" className="flex-1" onClick={() => handleUpload("Consent PDFs")}>
-                <Upload className="mr-2 h-4 w-4" /> Upload Consent PDFs
-              </Button>
+            <CardContent className="space-y-4">
+              {/* Image Upload */}
+              <div className="space-y-2">
+                <Label htmlFor="image-upload">Project Images</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="image-upload"
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="flex-1"
+                  />
+                  <Button type="button" variant="outline" onClick={() => document.getElementById('image-upload')?.click()}>
+                    <Upload className="mr-2 h-4 w-4" /> Browse
+                  </Button>
+                </div>
+                {selectedImages.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-sm text-muted-foreground">{selectedImages.length} image(s) selected:</p>
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {selectedImages.map((file, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-muted rounded text-sm">
+                          <span className="truncate flex-1">{file.name}</span>
+                          <span className="text-xs text-muted-foreground mx-2">{(file.size / 1024).toFixed(1)} KB</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeImage(index)}
+                            className="h-6 w-6 p-0"
+                          >
+                            ×
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* PDF Upload */}
+              <div className="space-y-2">
+                <Label htmlFor="pdf-upload">Consent PDFs</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="pdf-upload"
+                    type="file"
+                    multiple
+                    accept="application/pdf"
+                    onChange={handlePDFSelect}
+                    className="flex-1"
+                  />
+                  <Button type="button" variant="outline" onClick={() => document.getElementById('pdf-upload')?.click()}>
+                    <Upload className="mr-2 h-4 w-4" /> Browse
+                  </Button>
+                </div>
+                {selectedPDFs.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-sm text-muted-foreground">{selectedPDFs.length} PDF(s) selected:</p>
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {selectedPDFs.map((file, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-muted rounded text-sm">
+                          <span className="truncate flex-1">{file.name}</span>
+                          <span className="text-xs text-muted-foreground mx-2">{(file.size / 1024).toFixed(1)} KB</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removePDF(index)}
+                            className="h-6 w-6 p-0"
+                          >
+                            ×
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
           <div className="flex gap-3 justify-end">
-            <Button type="button" variant="outline" onClick={() => navigate(-1)}>Cancel</Button>
-            <Button type="submit">{existing ? "Save Changes" : "Create Project"}</Button>
+            <Button type="button" variant="outline" onClick={() => navigate(-1)} disabled={isSubmitting}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Saving..." : (existing ? "Save Changes" : "Create Project")}
+            </Button>
           </div>
         </form>
       </div>

@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Eye, Pencil, Trash2, Search, Plus, Loader2 } from "lucide-react";
+import { Eye, Pencil, Trash2, Search, Plus, Loader2, User, FolderKanban } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { listProjects, deleteProject } from "@/lib/api/projects";
 import type { ProjectResponse } from "@/lib/api-types";
+import { cn } from "@/lib/utils";
 
 const AdminDashboard = () => {
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
@@ -17,6 +18,7 @@ const AdminDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Fetch projects from API on mount
   useEffect(() => {
@@ -83,83 +85,87 @@ const AdminDashboard = () => {
   };
 
   return (
-    <AppLayout>
-      <div className="space-y-6 animate-in fade-in-0 duration-300">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Projects</h1>
-            <p className="text-sm text-muted-foreground">Manage all photography projects</p>
+    <AppLayout userName={user?.full_name || user?.email} userEmail={user?.email} userRole={user?.role}>
+      <div className="space-y-6">
+        {/* Page Header */}
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground mt-1">Manage consent mapping and privacy compliance across your image datasets</p>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search projects..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
           </div>
+          <Button variant="outline">
+            All Statuses
+          </Button>
           <Button onClick={() => navigate("/projects/create")}>
-            <Plus className="mr-2 h-4 w-4" /> New Project
+            <Plus className="mr-2 h-4 w-4" />
+            Create Project
           </Button>
         </div>
 
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search projects..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">All Projects</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : filtered.length === 0 ? (
-              <p className="py-8 text-center text-muted-foreground">
+        {/* Projects Grid */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <Card>
+            <CardContent className="py-12">
+              <p className="text-center text-muted-foreground">
                 {search ? "No projects found matching your search." : "No projects yet. Create your first project!"}
               </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="hidden sm:table-cell">Status</TableHead>
-                    <TableHead className="hidden md:table-cell">Target Images</TableHead>
-                    <TableHead className="hidden md:table-cell">Created</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((project) => (
-                    <TableRow key={project.id} className="group">
-                      <TableCell className="font-medium">{project.name}</TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        <Badge variant={statusColor(project.status) as any} className="capitalize">
-                          {project.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">{project.target_image_count}</TableCell>
-                      <TableCell className="hidden md:table-cell">{formatDate(project.created_at)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button size="icon" variant="ghost" onClick={() => navigate(`/projects/${project.id}`)}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => navigate(`/projects/${project.id}/edit`)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => handleDelete(project.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((project) => (
+              <Card key={project.id} className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate(`/projects/${project.id}`)}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <Badge className={cn(
+                      "capitalize",
+                      project.status === "active" && "bg-blue-500/20 text-blue-400 border-blue-500/30",
+                      project.status === "completed" && "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                    )}>
+                      {project.status}
+                    </Badge>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => e.stopPropagation()}>
+                      <span className="text-lg">⋮</span>
+                    </Button>
+                  </div>
+                  <CardTitle className="text-lg mt-3">{project.name}</CardTitle>
+                  <p className="text-sm text-muted-foreground line-clamp-2">{project.description || "Consent collection for project"}</p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <User className="h-3.5 w-3.5" />
+                      <span>{project.target_image_count || 0}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <FolderKanban className="h-3.5 w-3.5" />
+                      <span>0</span>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-border text-xs text-muted-foreground">
+                    <div>Created: {formatDate(project.created_at)}</div>
+                    <div>Last activity: {formatDate(project.updated_at)}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </AppLayout>
   );

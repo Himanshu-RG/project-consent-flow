@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     ALLOWED_IMAGE_EXTENSIONS: set = {".jpg", ".jpeg", ".png", ".gif", ".bmp"}
     ALLOWED_PDF_EXTENSIONS: set = {".pdf"}
     
+    # Known dataset for face recognition (folder of named face images)
+    # Absolute path so it works regardless of uvicorn launch directory
+    DATASET_KNOWN_DIR: str = r"C:\Users\hrayg\OneDrive\Desktop\consent-map-final\lovable\project-consent-flow\ml_model\SEED_PRISM_Collaborative\SEED_PRISM_Collaborative\git\25TS28VIT_Recognition_and_Redaction\consentmapdemo\dataset_known"
+
+    
     # Server Settings
     HOST: str = "0.0.0.0"
     PORT: int = 8000
