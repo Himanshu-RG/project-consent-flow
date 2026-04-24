@@ -23,7 +23,21 @@ dist-ssr
 *.sln
 *.sw?
 
-*.jpg
-*.png
-*.jpeg
-*.pdf
+# Backend upload data (user-generated content, not source code)
+backend/uploads/
+
+# Large build archives
+frontend.zip
+exe_build/
+
+# Python cache
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/**/*.pyo
+
+# Environment files (keep .env.example if it exists)
+backend/.env
+
+# Test artifacts
+backend/test_import.py
+backend/test_db.py
